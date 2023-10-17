@@ -136,7 +136,10 @@ public:
      * @param voice
      */
     void addVoiceToRing(Voice* voice) noexcept {
-        ASSERT(!voice->isInSisterRing());
+        // C74: replaced the assertion with a return
+        // ASSERT(!voice->isInSisterRing());
+        if (voice->isInSisterRing())
+            return;
 
         Voice* next = head_;
         if (!next)
