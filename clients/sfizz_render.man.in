@@ -29,7 +29,7 @@ Verbose output
 .IP "\fB--log\fR \fIPREFIX\fR"
 Produce logs
 .IP "\fB--use-eot\fR"
-End the rendering at the last End of Track Midi message
+End the rendering at the last End of Track MIDI message
 .IP "\fB-h\fR, \fB--help\fR"
 Show help
 .SH SEE ALSO
