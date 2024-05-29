@@ -226,8 +226,9 @@ void cliThreadProc()
 
         std::string command;
         std::getline(std::cin, command);
-        std::size_t pos = command.find(" ");
-        std::string kw = command.substr(0, pos);
+        std::size_t start = command.length()? command.find_first_not_of(" "): 0;
+        std::size_t pos = command.find(" ", start);
+        std::string kw = command.substr(start, pos - start);
         std::string args = command.substr(pos + 1);
         std::vector<std::string> tokens = stringTokenize(args);
 
