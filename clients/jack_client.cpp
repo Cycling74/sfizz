@@ -259,7 +259,7 @@ void cliThreadProc()
             } catch (...) {
                 std::cout << "ERROR: Can't set num of voices!\n";
             }
-        } else if (kw == "quit") {
+        } else if (kw == "quit" || !std::cin) {
             shouldClose = true;
         } else if (kw.size() > 0) {
             std::cout << "ERROR: Unknown command '" << kw << "'!\n";
