@@ -119,8 +119,10 @@ function(sfizz_enable_fast_math NAME)
 endfunction()
 
 function(sfizz_enable_release_asserts NAME)
-    target_compile_definitions("${NAME}" PUBLIC "SFIZZ_ENABLE_RELEASE_ASSERT=1")
-    target_compile_definitions("${NAME}" PUBLIC "SFIZZ_ENABLE_RELEASE_DBG=1")
+    if(SFIZZ_RELEASE_ASSERTS)
+        target_compile_definitions("${NAME}" PUBLIC "SFIZZ_ENABLE_RELEASE_ASSERT=1")
+        target_compile_definitions("${NAME}" PUBLIC "SFIZZ_ENABLE_RELEASE_DBG=1")
+    endif()
 endfunction()
 
 # If we build with Clang, optionally use libc++. Enabled by default on Apple OS.
