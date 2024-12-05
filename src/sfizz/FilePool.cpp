@@ -39,6 +39,7 @@
 #include <memory>
 #include <thread>
 #include <system_error>
+#include <atomic_queue/defs.h>
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -332,11 +333,13 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
 
     const auto existingFile = preloadedFiles.find(fileId);
     if (existingFile != preloadedFiles.end()) {
-        if (framesToLoad > existingFile->second.preloadedData.getNumFrames()) {
-            preloadedFiles[fileId].information.maxOffset = maxOffset;
-            preloadedFiles[fileId].preloadedData = readFromFile(*reader, framesToLoad);
+        auto& fileData = existingFile->second;
+        if (framesToLoad > fileData.preloadedData.getNumFrames()) {
+            fileData.information.maxOffset = maxOffset;
+            fileData.preloadedData = readFromFile(*reader, framesToLoad);
+            fileData.fullyLoaded = frames == framesToLoad;
         }
-        existingFile->second.preloadCallCount++;
+        fileData.preloadCallCount++;
     } else {
         fileInformation->sampleRate = static_cast<double>(reader->sampleRate());
         auto insertedPair = preloadedFiles.insert_or_assign(fileId, {
@@ -344,8 +347,9 @@ bool sfz::FilePool::preloadFile(const FileId& fileId, uint32_t maxOffset) noexce
             *fileInformation
         });
 
-        insertedPair.first->second.status = FileData::Status::Preloaded;
         insertedPair.first->second.preloadCallCount++;
+        insertedPair.first->second.status = FileData::Status::Preloaded;
+        insertedPair.first->second.fullyLoaded = framesToLoad == frames;
     }
 
     return true;
@@ -399,8 +403,9 @@ sfz::FileDataHolder sfz::FilePool::loadFile(const FileId& fileId) noexcept
         readFromFile(*reader, frames),
         *fileInformation
     });
-    insertedPair.first->second.status = FileData::Status::Preloaded;
     insertedPair.first->second.preloadCallCount++;
+    insertedPair.first->second.status = FileData::Status::Preloaded;
+    insertedPair.first->second.fullyLoaded = true;
     return { &insertedPair.first->second };
 }
 
@@ -417,8 +422,9 @@ sfz::FileDataHolder sfz::FilePool::loadFromRam(const FileId& fileId, const std::
         readFromFile(*reader, frames),
         *fileInformation
     });
-    insertedPair.first->second.status = FileData::Status::Preloaded;
     insertedPair.first->second.preloadCallCount++;
+    insertedPair.first->second.status = FileData::Status::Preloaded;
+    insertedPair.first->second.fullyLoaded = true;
     DBG("Added a file " << fileId.filename());
     return { &insertedPair.first->second };
 }
@@ -434,15 +440,19 @@ sfz::FileDataHolder sfz::FilePool::getFilePromise(const std::shared_ptr<FileId>&
         DBG("[sfizz] File not found in the preloaded files: " << fileId->filename());
         return {};
     }
-    QueuedFileData queuedData { fileId, &preloaded->second };
-    if (!filesToLoad->try_push(queuedData)) {
-        DBG("[sfizz] Could not enqueue the file to load for " << fileId << " (queue capacity " << filesToLoad->capacity() << ")");
-        return {};
-    }
 
-    std::error_code ec;
-    dispatchBarrier.post(ec);
-    ASSERT(!ec);
+    auto& fileData = preloaded->second;
+    if (!fileData.fullyLoaded) {
+        QueuedFileData queuedData { fileId, &fileData };
+        if (!filesToLoad->try_push(queuedData)) {
+            DBG("[sfizz] Could not enqueue the file to load for " << fileId << " (queue capacity " << filesToLoad->capacity() << ")");
+            return {};
+        }
+
+        std::error_code ec;
+        dispatchBarrier.post(ec);
+        ASSERT(!ec);
+    }
 
     return { &preloaded->second };
 }
@@ -455,10 +465,15 @@ void sfz::FilePool::setPreloadSize(uint32_t preloadSize) noexcept
 
     // Update all the preloaded sizes
     for (auto& preloadedFile : preloadedFiles) {
-        const auto maxOffset = preloadedFile.second.information.maxOffset;
-        fs::path file { rootDirectory / preloadedFile.first.filename() };
-        AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
-        preloadedFile.second.preloadedData = readFromFile(*reader, preloadSize + maxOffset);
+        auto& fileId = preloadedFile.first;
+        auto& fileData = preloadedFile.second;
+        const auto maxOffset = fileData.information.maxOffset;
+        fs::path file { rootDirectory / fileId.filename() };
+        AudioReaderPtr reader = createAudioReader(file, fileId.isReverse());
+        const auto frames = reader->frames();
+        const auto framesToLoad = min(frames, maxOffset + preloadSize);
+        fileData.preloadedData = readFromFile(*reader, static_cast<uint32_t>(framesToLoad));
+        fileData.fullyLoaded = frames == framesToLoad;
     }
 }
 
@@ -481,28 +496,39 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
         return;
     }
 
-    FileData::Status currentStatus = data.data->status.load();
+    FileData::Status currentStatus;
 
     unsigned spinCounter { 0 };
-    while (currentStatus == FileData::Status::Invalid) {
-        // Spin until the state changes
-        if (spinCounter > 1024) {
-            DBG("[sfizz] " << *id << " is stuck on Invalid? Leaving the load");
-            return;
-        }
 
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    while (1) {
         currentStatus = data.data->status.load();
-        spinCounter += 1;
+        while (currentStatus == FileData::Status::Invalid) {
+            // Spin until the state changes
+            if (spinCounter > 1024) {
+                DBG("[sfizz] " << *id << " is stuck on Invalid? Leaving the load");
+                return;
+            }
+
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            currentStatus = data.data->status.load();
+            spinCounter += 1;
+        }
+        // wait for garbage collection
+        if (currentStatus == FileData::Status::GarbageCollecting) {
+            atomic_queue::spin_loop_pause();
+            atomic_queue::spin_loop_pause();
+            atomic_queue::spin_loop_pause();
+            atomic_queue::spin_loop_pause();
+            continue;
+        }
+        // Already loading or loaded
+        if (currentStatus != FileData::Status::Preloaded)
+            return;
+
+        // go outside loop if this gets token
+        if (data.data->status.compare_exchange_strong(currentStatus, FileData::Status::Streaming))
+            break;
     }
-
-    // Already loading or loaded
-    if (currentStatus != FileData::Status::Preloaded)
-        return;
-
-    // Someone else got the token
-    if (!data.data->status.compare_exchange_strong(currentStatus, FileData::Status::Streaming))
-        return;
 
     streamFromFile(*reader, data.data->fileData, &data.data->availableFrames);
 
@@ -616,10 +642,12 @@ void sfz::FilePool::setRamLoading(bool loadInRam) noexcept
         for (auto& preloadedFile : preloadedFiles) {
             fs::path file { rootDirectory / preloadedFile.first.filename() };
             AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
-            preloadedFile.second.preloadedData = readFromFile(
+            auto& fileData = preloadedFile.second;
+            fileData.preloadedData = readFromFile(
                 *reader,
-                preloadedFile.second.information.end
+                fileData.information.end
             );
+            fileData.fullyLoaded = true;
         }
     } else {
         setPreloadSize(preloadSize);
@@ -645,11 +673,6 @@ void sfz::FilePool::triggerGarbageCollection() noexcept
         }
 
         sfz::FileData& data = it->second;
-        if (data.status == FileData::Status::Preloaded)
-            return true;
-
-        if (data.status != FileData::Status::Done)
-            return false;
 
         if (data.readerCount != 0)
             return false;
@@ -658,10 +681,30 @@ void sfz::FilePool::triggerGarbageCollection() noexcept
         if (secondsIdle < config::fileClearingPeriod)
             return false;
 
-        data.availableFrames = 0;
-        data.status = FileData::Status::Preloaded;
-        garbageToCollect.push_back(std::move(data.fileData));
-        return true;
+        auto status = data.status.load();
+        if (status == FileData::Status::Preloaded) {
+            // do the garbage collection when availableFrames != 0
+            if (data.availableFrames == 0) {
+                return true;
+            }
+        }
+        else if (status != FileData::Status::Done) {
+            return false;
+        }
+
+        // do garbage collection when changing the status is success
+        if (data.status.compare_exchange_strong(status, FileData::Status::GarbageCollecting)) {
+            // recheck readerCount
+            auto readerCount = data.readerCount.load();
+            if (readerCount == 0) {
+                data.availableFrames = 0;
+                garbageToCollect.push_back(std::move(data.fileData));
+                data.status = FileData::Status::Preloaded;
+                return true;
+            }
+            data.status = status;
+        }
+        return false;
     });
 
     std::error_code ec;

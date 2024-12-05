@@ -51,7 +51,7 @@ endif()
 
 # Set macOS compatibility level
 if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13")
 endif()
 
 # If using C++17, check if aligned-new has runtime support on the platform;
@@ -87,7 +87,7 @@ endif()
 if(NOT PROJECT_SYSTEM_PROCESSOR)
     if(MSVC)
         set(PROJECT_SYSTEM_PROCESSOR "${MSVC_CXX_ARCHITECTURE_ID}" CACHE STRING "" FORCE)
-    elseif(CMAKE_OSX_ARCHITECTURES)
+    elseif(APPLE AND CMAKE_OSX_ARCHITECTURES)
         set(PROJECT_SYSTEM_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}" CACHE STRING "" FORCE)
     else()
         set(PROJECT_SYSTEM_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}" CACHE STRING "" FORCE)

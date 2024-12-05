@@ -6,6 +6,49 @@ This project tries to adhere to [Semantic Versioning][2].
 
 ## [Unreleased]
 
+### Added
+
+- [invoke.hpp](https://github.com/BlackMATov/invoke.hpp/) dependency/Git submodule.
+- CI: build timeouts.
+- C++20 Support (#1235 by @KKQ-KKQ)
+
+### Changed
+
+- Refactor the messaging system
+  Trading off complexity when parsing/replying to the messages for complexity
+  in some templated and overloaded code blocks.
+- Truncate MIDI values when denormalizing (by @essej).
+- Improved note-on performance (#1232 by @KKQ-KKQ)
+- Updated abseil-cpp to 20240116.0.
+- Usual little CI improvements.
+
+### Fixed
+
+- Tweak SynthMessaging (#1241)
+- Fix a ModMatrix bug (#1242)
+- Fixed a bug that causes invalid effect output (#1243 by @KKQ-KKQ)
+
+## [1.2.3] - 2024-01-15
+
+### Added
+
+- Support for curvecc opcodes on v1 EGs (@PythonBlue)
+- Support for `lotimer/hitimer` (@essej)
+
+### Changed
+
+- Allow polyphonic aftertouch (cc 130) to respect the note number, which improves e.g. the choking logic (@essej)
+
+### Fixed
+
+- Adjusted the gain compensation on pan stages (@cvde)
+- Ensure that voices are cleaned up before being force-reused (@iv-m)
+- Fixed a bug in the wavpack wrapper for multichannel files (@KKQ-KKQ)
+- Fixed a bug in the way the tuning root was computed (@KKQ-KKQ)
+- Fixed a bug where samples would be loaded in RAM twice when using `hint_ram_based=1`
+- Fixed a bug where quasi-simultaneous notes would not properly choke each other
+- Don't send a note off even if a note was choked by a CC event.
+
 ## [1.2.2] - 2023-08-25
 
 ### Added
@@ -34,7 +77,7 @@ This project tries to adhere to [Semantic Versioning][2].
 - Fixed build on Windows
 - Fixed modulation matrix when CC modulations are per voice (#1173 #1179 by @PythonBlue)
 - Fixed and reenabled tests
-- modifications to support univeral x86_64/ARM builds on macOS (#1183 by @essej)
+- Modifications to support universal x86_64/ARM builds on macOS (#1183 by @essej)
 
 ### Removed
 
@@ -792,7 +835,8 @@ becoming a library to be used in other projects, plus a LV2 plugin.
 [1]: https://keepachangelog.com/en/1.0.0/
 [2]: https://semver.org/spec/v2.0.0.html
 
-[Unreleased]: https://github.com/sfztools/sfizz/compare/1.2.2...HEAD
+[Unreleased]: https://github.com/sfztools/sfizz/compare/1.2.3...HEAD
+[1.2.3]:  https://github.com/sfztools/sfizz/compare/1.2.2...1.2.3
 [1.2.2]:  https://github.com/sfztools/sfizz/compare/1.2.1...1.2.2
 [1.2.1]:  https://github.com/sfztools/sfizz/compare/1.2.0...1.2.1
 [1.2.0]:  https://github.com/sfztools/sfizz/compare/1.1.1...1.2.0

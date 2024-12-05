@@ -23,7 +23,9 @@ env:
 jobs:
   clang_tidy:
     name: Clang Tidy
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-20.04
+    timeout-minutes: 10
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -37,6 +39,7 @@ jobs:
   test_with_asan:
     name: ASAN
     runs-on: ubuntu-22.04 # abseil (libabsl) is not available in 20.04 repository
+    timeout-minutes: 10
     env:
       install_name: sfizz-${{ github.ref_name }}-linux
     strategy:
@@ -88,6 +91,7 @@ jobs:
   build_for_linux:
     name: Linux Ubuntu 22.04
     runs-on: ubuntu-22.04 # abseil (libabsl) is not available in 20.04 repository
+    timeout-minutes: 10
     env:
       install_name: sfizz-${{ github.ref_name }}-linux
     steps:
@@ -101,7 +105,7 @@ jobs:
           ninja-build \
           libjack-jackd2-dev
     - name: Install abseil
-      if: ${{ github.ref_type == 'branch' }}
+      if: github.ref_type == 'branch'
       run: |
         sudo apt-get install \
           libabsl-dev \
@@ -156,13 +160,13 @@ jobs:
         )
         cmake "${options[@]}"
     - name: Create tarball
-      if: ${{ github.ref_type == 'tag' }}
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
       run: |
         DESTDIR="$(pwd)/${{ env.install_name }}" \
           cmake --build build --config ${{ env.build_type }} --target install
         tar czvf "${{ env.install_name }}".tar.gz "${{ env.install_name }}"
     - name: Upload
-      if: ${{ github.ref_type == 'tag' }}
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
       uses: actions/upload-artifact@v3
       with:
         name: Linux tarball
@@ -171,6 +175,7 @@ jobs:
   build_for_macos:
     name: macOS 11
     runs-on: macos-11
+    timeout-minutes: 15
     env:
       install_name: "sfizz-${{ github.ref_name }}-macos"
     steps:
@@ -179,7 +184,7 @@ jobs:
       with:
         submodules: recursive
     - name: Install dependencies
-      if: ${{ github.ref_type == 'branch' }}
+      if: github.ref_type == 'branch'
       run: brew install abseil
     - name: Configure CMake
       run: |
@@ -228,13 +233,13 @@ jobs:
         )
         cmake "${options[@]}"
     - name: Create tarball
-      if: ${{ github.ref_type == 'tag' }}
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
       run: |
         DESTDIR="$(pwd)/${{ env.install_name }}" \
           cmake --build build --config ${{ env.build_type }} --target install
         tar czvf "${{ env.install_name }}".tar.gz "${{ env.install_name }}"
     - name: Upload
-      if: ${{ github.ref_type == 'tag' }}
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
       uses: actions/upload-artifact@v3
       with:
         name: macOS tarball
@@ -243,6 +248,7 @@ jobs:
   build_for_windows:
     name: Windows 2019
     runs-on: windows-2019
+    timeout-minutes: 15
     strategy:
       matrix:
         include:
@@ -293,19 +299,20 @@ jobs:
           --parallel 2 `
           --verbose `
     - name: Create zip package
-      if: ${{ github.ref_type == 'tag' }}
-      run: 7z a "${{ env.install_name }}.zip" ".\build\src\${{ env.build_type }}\sfizz.*"
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
+      run: 7z a "${{ env.install_name }}.zip" ".\build\library\*"
     - name: Upload
-      if: ${{ github.ref_type == 'tag' }}
+      if: github.ref_type == 'tag' || github.ref_name == 'release-test'
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.pkg_platform }} zip package
         path: "${{ github.workspace }}/${{ env.install_name }}.zip"
 
   archive_source_code:
-    if: ${{ github.ref_type == 'tag' }}
+    if: github.ref_type == 'tag' || github.ref_name == 'release-test'
     name: Source code archive
     runs-on: ubuntu-20.04
+    timeout-minutes: 2
     env:
       install_name: sfizz-${{ github.ref_name }}
     steps:
@@ -331,6 +338,7 @@ jobs:
   build_with_libsndfile:
     name: Linux libsndfile
     runs-on: ubuntu-20.04
+    timeout-minutes: 10
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -378,6 +386,7 @@ jobs:
   build_with_makefile:
     name: Linux makefile
     runs-on: ubuntu-20.04
+    timeout-minutes: 10
     steps:
     - name: Checkout
       uses: actions/checkout@v3
@@ -406,12 +415,12 @@ jobs:
         make -C "${{ github.workspace }}" -f simple.mk
 
   deploy:
-    if: ${{ github.ref_type == 'tag' }}
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-20.04
     needs:
       - build_for_linux
       - build_for_macos
-      # - build_for_mod
+      # build_for_mod
       - build_for_windows
       - archive_source_code
     steps:

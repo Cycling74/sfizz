@@ -3,10 +3,10 @@ exec_prefix=@CMAKE_INSTALL_PREFIX@
 libdir=@CMAKE_INSTALL_FULL_LIBDIR@
 includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
 
-Name: @PROJECT_NAME@
+Name: sfizz
 Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 
 Requires.private:@SFIZZ_PC_REQUIRES@
-Libs: -L${libdir} -l@PROJECT_NAME@
+Libs: -L${libdir} -lsfizz
 Cflags: -I${includedir}

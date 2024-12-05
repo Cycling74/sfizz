@@ -58,13 +58,13 @@ void ADSREnvelope::reset(const EGDescription& desc, const Region& region, int de
 void ADSREnvelope::updateValues(int delay) noexcept
 {
     if (currentState == State::Delay)
-        this->delay = delay + secondsToSamples(desc_->getDelay(midiState_, triggerVelocity_, delay));
-    this->attackStep = secondsToLinRate(desc_->getAttack(midiState_, triggerVelocity_, delay));
-    this->decayRate = secondsToExpRate(desc_->getDecay(midiState_, triggerVelocity_, delay));
-    this->releaseRate = secondsToExpRate(desc_->getRelease(midiState_, triggerVelocity_, delay));
-    this->hold = secondsToSamples(desc_->getHold(midiState_, triggerVelocity_, delay));
-    this->sustain = clamp(desc_->getSustain(midiState_, triggerVelocity_, delay), 0.0f, 1.0f);
-    this->start = clamp(desc_->getStart(midiState_, triggerVelocity_, delay), 0.0f, 1.0f);
+        this->delay = delay + secondsToSamples(desc_->getDelay(midiState_, curveSet_, triggerVelocity_, delay));
+    this->attackStep = secondsToLinRate(desc_->getAttack(midiState_, curveSet_, triggerVelocity_, delay));
+    this->decayRate = secondsToExpRate(desc_->getDecay(midiState_, curveSet_, triggerVelocity_, delay));
+    this->releaseRate = secondsToExpRate(desc_->getRelease(midiState_, curveSet_, triggerVelocity_, delay));
+    this->hold = secondsToSamples(desc_->getHold(midiState_, curveSet_, triggerVelocity_, delay));
+    this->sustain = clamp(desc_->getSustain(midiState_, curveSet_, triggerVelocity_, delay), 0.0f, 1.0f);
+    this->start = clamp(desc_->getStart(midiState_, curveSet_, triggerVelocity_, delay), 0.0f, 1.0f);
     sustainThreshold = this->sustain + config::virtuallyZero;
 }
 
@@ -97,13 +97,23 @@ void ADSREnvelope::getBlockInternal(absl::Span<Float> output) noexcept
         size_t count = 0;
         size_t size = output.size();
 
-        if (shouldRelease && releaseDelay == 0) {
-            // release takes effect this frame
-            currentState = State::Release;
-            releaseDelay = -1;
-        } else if (shouldRelease && releaseDelay > 0) {
-            // prevent computing the segment further than release point
-            size = std::min<size_t>(size, releaseDelay);
+        if (shouldRelease) {
+            if (releaseDelay > 0) {
+                // prevent computing the segment further than release point
+                size = std::min<size_t>(size, releaseDelay);
+            } else if (releaseDelay == 0 && delay <= 0) {
+                if (delay < 0) {
+                    // release takes effect this frame
+                    currentState = State::Release;
+                } else {
+                    // release takes effect the next frame
+                    size = 1;
+                }
+                releaseDelay = -1;
+            } else if (releaseDelay == -1 && currentState < State::Release && delay <= 0) {
+                // release takes effect this frame
+                currentState = State::Release;
+            }
         }
 
         Float previousValue;
